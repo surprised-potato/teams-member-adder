@@ -1,0 +1,48 @@
+{
+    "manifest_version": 2,
+    "name": "Teams Member Adder",
+    "version": "1.1.0",
+    "description": "Batch add members to Microsoft Teams from a masterlist file. Upload your class roster and automatically add all students to your team.",
+    "author": "Daniel",
+    "homepage_url": "https://github.com/your-username/teams-member-adder",
+    "permissions": [
+        "activeTab",
+        "storage",
+        "tabs"
+    ],
+    "background": {
+        "scripts": [
+            "background.js"
+        ]
+    },
+    "browser_action": {
+        "default_icon": {
+            "48": "icons/icon-48.png",
+            "96": "icons/icon-96.png"
+        },
+        "default_title": "Teams Member Adder"
+    },
+    "icons": {
+        "48": "icons/icon-48.png",
+        "96": "icons/icon-96.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://teams.microsoft.com/*"
+            ],
+            "js": [
+                "content.js"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        "popup.html"
+    ],
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "teams-member-adder@your-email.com",
+            "strict_min_version": "78.0"
+        }
+    }
+}

@@ -21,6 +21,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let stats = { total: 0, success: 0, error: 0 };
     let generatedEmails = [];
 
+    function addLog(message, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        log.insertBefore(entry, log.firstChild);
+    }
     // Tab switching
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -103,39 +109,43 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     }
 
-    function parseCSV(content) {
-        const lines = content.split('\n');
-        const emails = [];
-
-        for (const line of lines) {
-            // Check if line contains an email
-            const match = line.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-            if (match) {
-                emails.push(match[1].toLowerCase());
-            }
-        }
-
-        return emails;
-    }
-
     function parseHTMLMasterlist(html) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const rows = doc.querySelectorAll('tr');
-        const emails = [];
+        const students = [];
 
         for (const row of rows) {
             const cells = row.querySelectorAll('td');
             if (cells.length >= 1) {
                 const name = cells[0].textContent.trim();
-                const email = generateEmailFromName(name);
-                if (email) {
-                    emails.push(email);
+                const result = generateEmailFromName(name);
+                if (result) {
+                    students.push(result);
                 }
             }
         }
 
-        return emails;
+        return students;
+    }
+
+    function parseCSV(content) {
+        const lines = content.split('\n');
+        const students = [];
+
+        for (const line of lines) {
+            // Check if line contains an email
+            const match = line.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+            if (match) {
+                // If it's just a raw email list, use email for both
+                students.push({
+                    email: match[1].toLowerCase(),
+                    searchQuery: match[1].toLowerCase()
+                });
+            }
+        }
+
+        return students;
     }
 
     function generateEmailFromName(fullName) {
@@ -150,15 +160,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (givenNames.length === 0) return null;
 
-        // Remove the last word (mother's maiden surname)
+        // Remove the last word (mother's maiden surname) from email generation
+        // But keep it for the search query if needed? User said "first and last name"
+        // Let's stick to First + Last (Surname) for search to be safe
+
         let emailNames;
+        let searchGivenName;
+
         if (givenNames.length > 1) {
             emailNames = givenNames.slice(0, -1);
+            // using the first given name for search 
+            searchGivenName = givenNames[0];
         } else {
             emailNames = givenNames;
+            searchGivenName = givenNames[0];
         }
 
-        // Normalize names
+        // Normalize names for email
         const normalize = (name) => {
             return name.toLowerCase()
                 .replace(/ñ/gi, 'n')
@@ -169,8 +187,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const emailParts = emailNames.map(normalize).filter(n => n.length > 0);
         const surnameNormalized = normalize(surname).replace(/\s+/g, '');
         emailParts.push(surnameNormalized);
+        const email = emailParts.join('.') + '@student.uno-r.edu.ph';
 
-        return emailParts.join('.') + '@student.uno-r.edu.ph';
+        // Construct search query: "Firstname Lastname"
+        // This is often more reliable for directory search than partial names
+        const searchQuery = `${searchGivenName} ${surname}`;
+
+        return { email, searchQuery };
     }
 
     function getCurrentEmails() {
@@ -187,38 +210,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return text
             .split('\n')
             .map(e => e.trim())
-            .filter(e => e.length > 0 && e.includes('@'));
+            .filter(e => e.length > 0 && e.includes('@'))
+            .map(e => ({ email: e, searchQuery: e })); // Default search query is email for pasted list
     }
 
     function updateStats() {
-        const emails = getCurrentEmails();
-        stats.total = emails.length;
+        const students = getCurrentEmails();
+        stats.total = students.length;
         totalCount.textContent = stats.total;
         successCount.textContent = stats.success;
         errorCount.textContent = stats.error;
     }
-
-    function addLog(message, type = 'info') {
-        const entry = document.createElement('div');
-        entry.className = `log-entry log-${type}`;
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-        log.insertBefore(entry, log.firstChild);
-    }
-
-    clearBtn.addEventListener('click', () => {
-        log.innerHTML = '';
-        stats.success = 0;
-        stats.error = 0;
-        generatedEmails = [];
-        fileInfo.textContent = '';
-        updateStats();
-    });
-
+    // ... (startBtn listener) ...
     startBtn.addEventListener('click', async () => {
         if (isRunning) return;
 
-        const emails = getCurrentEmails();
-        if (emails.length === 0) {
+        const students = getCurrentEmails();
+        if (students.length === 0) {
             addLog('No valid emails found. Upload a file or paste emails.', 'error');
             return;
         }
@@ -228,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startBtn.disabled = true;
         pauseBtn.disabled = false;
 
-        addLog(`Starting to add ${emails.length} members...`, 'info');
+        addLog(`Starting to add ${students.length} members...`, 'info');
 
         // Find the Teams tab (not the current extension tab)
         const allTabs = await browser.tabs.query({});
@@ -244,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const delay = parseInt(delayInput.value) || 2000;
 
-        for (let i = 0; i < emails.length; i++) {
+        for (let i = 0; i < students.length; i++) {
             if (!isRunning) break;
 
             while (isPaused) {
@@ -254,30 +262,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!isRunning) break;
 
-            const email = emails[i];
-            addLog(`[${i + 1}/${emails.length}] Adding: ${email}`, 'info');
+            const student = students[i];
+            addLog(`[${i + 1}/${students.length}] Adding: ${student.searchQuery} (${student.email})`, 'info');
 
             try {
                 const response = await browser.tabs.sendMessage(teamsTab.id, {
                     action: 'addMember',
-                    email: email
+                    email: student.email,
+                    searchQuery: student.searchQuery
                 });
 
                 if (response && response.success) {
                     stats.success++;
-                    addLog(`✓ Added: ${email}`, 'success');
+                    addLog(`✓ Added: ${student.email}`, 'success');
                 } else {
                     stats.error++;
-                    addLog(`✗ Failed: ${email} - ${response?.error || 'Unknown error'}`, 'error');
+                    addLog(`✗ Failed: ${student.email} - ${response?.error || 'Unknown error'}`, 'error');
                 }
             } catch (error) {
                 stats.error++;
-                addLog(`✗ Error: ${email} - ${error.message}`, 'error');
+                addLog(`✗ Error: ${student.email} - ${error.message}`, 'error');
             }
 
             updateStats();
 
-            if (i < emails.length - 1) {
+            if (i < students.length - 1) {
                 await new Promise(r => setTimeout(r, delay));
             }
         }

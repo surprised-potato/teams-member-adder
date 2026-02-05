@@ -3,14 +3,17 @@
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'addMember') {
-        addMember(message.email)
+        addMember(message.email, message.searchQuery)
             .then(result => sendResponse(result))
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true; // Keep the message channel open for async response
     }
 });
 
-async function addMember(email) {
+async function addMember(email, searchQuery) {
+    // If no specific search query provided, use email prefix
+    if (!searchQuery) searchQuery = email.split('@')[0];
+
     // First, find the Add Member dialog/panel
     // We need to specifically target inputs INSIDE the dialog, not the main search bar
 
@@ -123,12 +126,15 @@ async function addMember(email) {
 
     await sleep(100);
 
+    // Communicate what we are searching for
+    console.log(`[Teams Member Adder] Searching for: "${searchQuery}" (expected email: ${email})`);
+
     // Simulate typing (React-friendly)
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
         'value'
     ).set;
-    nativeInputValueSetter.call(input, email);
+    nativeInputValueSetter.call(input, searchQuery);
 
     // Dispatch input event to trigger React's onChange
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -155,16 +161,22 @@ async function addMember(email) {
     ];
 
     let suggestion = null;
-    const emailPrefix = email.split('@')[0].toLowerCase();
 
     for (const selector of suggestionSelectors) {
         const items = document.querySelectorAll(selector);
         for (const item of items) {
             const text = item.textContent.toLowerCase();
-            // Match by email prefix or full email
-            if (text.includes(emailPrefix) || text.includes(email.toLowerCase())) {
+            // Match logic:
+            // 1. Exact email match (best)
+            // 2. Email prefix match
+            // 3. Name match (if searchQuery is in the result text)
+
+            if (text.includes(email.toLowerCase()) ||
+                text.includes(email.split('@')[0].toLowerCase()) ||
+                text.includes(searchQuery.toLowerCase())) {
+
                 suggestion = item;
-                console.log('[Teams Member Adder] Found suggestion:', item.textContent.substring(0, 50));
+                console.log('[Teams Member Adder] Found matching suggestion:', item.textContent.substring(0, 50));
                 break;
             }
         }
@@ -177,6 +189,7 @@ async function addMember(email) {
         return { success: true };
     } else {
         // If no suggestion found, try pressing Enter
+        console.log('[Teams Member Adder] No suggestion matched. Attempting Enter key...');
         input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter',
             code: 'Enter',

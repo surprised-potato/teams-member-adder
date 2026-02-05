@@ -21,7 +21,8 @@
         "tabs"
     ],
     "host_permissions": [
-        "*://teams.microsoft.com/*"
+        "*://teams.microsoft.com/*",
+        "*://teams.cloud.microsoft/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -29,7 +30,8 @@
     "content_scripts": [
         {
             "matches": [
-                "*://teams.microsoft.com/*"
+                "*://teams.microsoft.com/*",
+                "*://teams.cloud.microsoft/*"
             ],
             "js": [
                 "content.js"

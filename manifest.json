@@ -29,7 +29,8 @@
     "content_scripts": [
         {
             "matches": [
-                "*://teams.microsoft.com/*"
+                "*://teams.microsoft.com/*",
+                "*://teams.cloud.microsoft/*"
             ],
             "js": [
                 "content.js"

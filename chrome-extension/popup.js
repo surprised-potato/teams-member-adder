@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Find the Teams tab (not the current extension tab)
         const allTabs = await chrome.tabs.query({});
-        const teamsTab = allTabs.find(t => t.url && t.url.includes('teams.microsoft.com'));
+        const teamsTab = allTabs.find(t => t.url && (t.url.includes('teams.microsoft.com') || t.url.includes('teams.cloud.microsoft')));
 
         if (!teamsTab) {
             addLog('Please open Microsoft Teams in another tab first!', 'error');
@@ -281,7 +281,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 stats.error++;
-                addLog(`✗ Error: ${student.email} - ${error.message}`, 'error');
+                let errorMsg = error.message;
+                if (errorMsg.includes('Could not establish connection')) {
+                    errorMsg = 'Connection lost. Please REFRESH the Teams tab and try again.';
+                }
+                addLog(`✗ Error: ${student.email} - ${errorMsg}`, 'error');
             }
 
             updateStats();

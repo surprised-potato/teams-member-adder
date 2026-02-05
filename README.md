@@ -1,13 +1,22 @@
-# Teams Member Adder - Firefox Extension
+# Teams Member Adder - Extension
 
-A Firefox extension to batch add members to Microsoft Teams from a masterlist file or email list.
+A browser extension to batch add members to Microsoft Teams from a masterlist file or email list. Available for Firefox and Chrome.
 
 ## Installation
 
+### Firefox
 1. Open Firefox and go to `about:debugging`
 2. Click "This Firefox" in the left sidebar
 3. Click "Load Temporary Add-on..."
 4. Navigate to this folder and select `manifest.json`
+
+### Chrome / Edge
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable "Developer mode" in the top right
+3. Click "Load unpacked"
+4. Select the `chrome-extension` folder in this repository
+
+The extension icon will appear in your toolbar.
 
 The extension icon will appear in your toolbar.
 

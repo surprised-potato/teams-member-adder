@@ -338,6 +338,32 @@
             color: var(--success);
             margin-top: 8px;
         }
+
+        .failed-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-left: 3px solid var(--error);
+            border-radius: 6px;
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            font-size: 0.7rem;
+        }
+
+        .failed-item-name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .failed-item-details {
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+            margin-top: 2px;
+        }
+
+        .failed-item-reason {
+            color: var(--error);
+            font-size: 0.65rem;
+            margin-top: 2px;
+        }
     </style>
 </head>
 
@@ -403,6 +429,14 @@
     <div class="controls">
         <button class="btn btn-secondary" id="pauseBtn" disabled>⏸ Pause</button>
         <button class="btn btn-secondary" id="clearBtn">🗑 Clear</button>
+    </div>
+
+    <div id="failedSection" class="section" style="margin-top: 12px; display: none; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.08);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="section-title" style="color: var(--error); margin-bottom: 0;">❌ Failed Students (<span id="failedCount">0</span>)</div>
+            <button class="btn btn-secondary" id="copyFailedBtn" style="padding: 4px 8px; font-size: 0.65rem; background: rgba(239, 68, 68, 0.15); border-color: var(--error); color: var(--error);">📋 Copy Failed List</button>
+        </div>
+        <div id="failedList" style="max-height: 160px; overflow-y: auto;"></div>
     </div>
 
     <div class="section" style="margin-top: 12px;">

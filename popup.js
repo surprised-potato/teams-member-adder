@@ -16,10 +16,73 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInfo = document.getElementById('fileInfo');
     const tabs = document.querySelectorAll('.tab');
 
+    const failedSection = document.getElementById('failedSection');
+    const failedCount = document.getElementById('failedCount');
+    const failedList = document.getElementById('failedList');
+    const copyFailedBtn = document.getElementById('copyFailedBtn');
+
     let isRunning = false;
     let isPaused = false;
     let stats = { total: 0, success: 0, error: 0 };
     let generatedEmails = [];
+    let failedStudents = [];
+
+    function clearFailedStudents() {
+        failedStudents = [];
+        if (failedList) failedList.innerHTML = '';
+        if (failedSection) failedSection.style.display = 'none';
+        if (failedCount) failedCount.textContent = '0';
+    }
+
+    function renderFailedStudents() {
+        if (!failedSection || !failedList) return;
+
+        if (failedStudents.length === 0) {
+            failedSection.style.display = 'none';
+            return;
+        }
+
+        failedSection.style.display = 'block';
+        failedCount.textContent = failedStudents.length;
+        failedList.innerHTML = '';
+
+        failedStudents.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'failed-item';
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'failed-item-name';
+            nameDiv.textContent = item.student.searchQuery || item.student.email;
+
+            const detailsDiv = document.createElement('div');
+            detailsDiv.className = 'failed-item-details';
+            detailsDiv.textContent = item.student.email;
+
+            const reasonDiv = document.createElement('div');
+            reasonDiv.className = 'failed-item-reason';
+            reasonDiv.textContent = `Reason: ${item.error}`;
+
+            div.appendChild(nameDiv);
+            div.appendChild(detailsDiv);
+            div.appendChild(reasonDiv);
+
+            failedList.appendChild(div);
+        });
+    }
+
+    if (copyFailedBtn) {
+        copyFailedBtn.addEventListener('click', () => {
+            if (failedStudents.length === 0) return;
+            const listText = failedStudents.map(item => `${item.student.searchQuery || item.student.email} (${item.student.email}) - ${item.error}`).join('\n');
+            navigator.clipboard.writeText(listText).then(() => {
+                const originalText = copyFailedBtn.textContent;
+                copyFailedBtn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    copyFailedBtn.textContent = originalText;
+                }, 2000);
+            });
+        });
+    }
 
     function addLog(message, type = 'info') {
         const entry = document.createElement('div');
@@ -36,6 +99,20 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
             updateStats();
         });
+    });
+
+    // Clear button handling
+    clearBtn.addEventListener('click', () => {
+        emailsInput.value = '';
+        browser.storage.local.remove('emails');
+        generatedEmails = [];
+        fileInfo.textContent = '';
+        fileInput.value = '';
+        log.innerHTML = '';
+        stats = { total: 0, success: 0, error: 0 };
+        clearFailedStudents();
+        updateStats();
+        addLog('Cleared all data', 'info');
     });
 
     // Load saved data
@@ -99,9 +176,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Show first few for verification
             if (generatedEmails.length > 0) {
-                addLog(`Sample: ${generatedEmails[0]}`, 'info');
+                addLog(`Sample: ${generatedEmails[0].searchQuery} (${generatedEmails[0].email})`, 'info');
                 if (generatedEmails.length > 1) {
-                    addLog(`Sample: ${generatedEmails[1]}`, 'info');
+                    addLog(`Sample: ${generatedEmails[1].searchQuery} (${generatedEmails[1].email})`, 'info');
                 }
             }
         };
@@ -160,20 +237,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (givenNames.length === 0) return null;
 
-        // Remove the last word (mother's maiden surname) from email generation
-        // But keep it for the search query if needed? User said "first and last name"
-        // Let's stick to First + Last (Surname) for search to be safe
-
-        let emailNames;
-        let searchGivenName;
-
+        // Primary method: In UNO-R masterlists (SURNAME, GIVEN_NAMES MOTHER_MAIDEN_SURNAME),
+        // drop the Mother's Maiden Surname (last word of givenNames if > 1 words)
+        let emailGivenNames;
         if (givenNames.length > 1) {
-            emailNames = givenNames.slice(0, -1);
-            // using the first given name for search 
-            searchGivenName = givenNames[0];
+            emailGivenNames = givenNames.slice(0, -1);
         } else {
-            emailNames = givenNames;
-            searchGivenName = givenNames[0];
+            emailGivenNames = givenNames;
         }
 
         // Normalize names for email
@@ -184,14 +254,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 .trim();
         };
 
-        const emailParts = emailNames.map(normalize).filter(n => n.length > 0);
-        const surnameNormalized = normalize(surname).replace(/\s+/g, '');
-        emailParts.push(surnameNormalized);
-        const email = emailParts.join('.') + '@student.uno-r.edu.ph';
+        const givenNormalized = emailGivenNames.map(normalize).filter(n => n.length > 0);
+        
+        // Handle compound surnames (e.g. DE LA CRUZ -> de.la.cruz)
+        const surnameWords = surname.split(/\s+/).map(normalize).filter(n => n.length > 0);
+        const surnameDotted = surnameWords.join('.');
 
-        // Construct search query: "Firstname Lastname"
-        // This is often more reliable for directory search than partial names
-        const searchQuery = `${searchGivenName} ${surname}`;
+        // Primary email: e.g. jeff.daniel.aujero@student.uno-r.edu.ph
+        const email = [...givenNormalized, surnameDotted].join('.') + '@student.uno-r.edu.ph';
+
+        // Primary searchQuery: e.g. "JEFF DANIEL AUJERO"
+        const searchQuery = `${emailGivenNames.join(' ')} ${surname}`;
 
         return { email, searchQuery };
     }
@@ -221,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         successCount.textContent = stats.success;
         errorCount.textContent = stats.error;
     }
-    // ... (startBtn listener) ...
+
     startBtn.addEventListener('click', async () => {
         if (isRunning) return;
 
@@ -233,6 +306,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         isRunning = true;
         isPaused = false;
+        clearFailedStudents();
+        stats = { total: students.length, success: 0, error: 0 };
+        updateStats();
+
         startBtn.disabled = true;
         pauseBtn.disabled = false;
 
@@ -277,7 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     addLog(`✓ Added: ${student.email}`, 'success');
                 } else {
                     stats.error++;
-                    addLog(`✗ Failed: ${student.email} - ${response?.error || 'Unknown error'}`, 'error');
+                    const err = response?.error || 'Unknown error';
+                    failedStudents.push({ student, error: err });
+                    addLog(`✗ Failed: ${student.email} - ${err}`, 'error');
                 }
             } catch (error) {
                 stats.error++;
@@ -285,6 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (errorMsg.includes('Could not establish connection')) {
                     errorMsg = 'Connection lost. Please REFRESH the Teams tab and try again.';
                 }
+                failedStudents.push({ student, error: errorMsg });
                 addLog(`✗ Error: ${student.email} - ${errorMsg}`, 'error');
             }
 
@@ -299,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startBtn.disabled = false;
         pauseBtn.disabled = true;
         addLog(`Completed! ${stats.success} added, ${stats.error} errors.`, 'info');
+        renderFailedStudents();
     });
 
     pauseBtn.addEventListener('click', () => {
@@ -307,3 +388,4 @@ document.addEventListener('DOMContentLoaded', () => {
         addLog(isPaused ? 'Paused' : 'Resumed', 'warning');
     });
 });
+

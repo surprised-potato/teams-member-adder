@@ -115,38 +115,67 @@ async function addMember(email, searchQuery) {
         };
     }
 
-    // Clear existing text and focus
+    // Build candidate search queries (Lean & Fast: primary searchQuery first)
+    const queriesToTry = [];
+    if (searchQuery) queriesToTry.push(searchQuery);
+    if (email && !queriesToTry.includes(email)) queriesToTry.push(email);
+
+    // Fallback: If searchQuery had multiple words (e.g. middle names), try first name + surname
+    const queryWords = (searchQuery || '').trim().split(/\s+/);
+    if (queryWords.length > 2) {
+        const shortQuery = `${queryWords[0]} ${queryWords[queryWords.length - 1]}`;
+        if (!queriesToTry.includes(shortQuery)) queriesToTry.push(shortQuery);
+    }
+
+    let suggestion = null;
+
+    for (const query of queriesToTry) {
+        console.log(`[Teams Member Adder] Attempting search with: "${query}" (target email: ${email})`);
+        await typeAndSearch(input, query);
+        suggestion = findMatchingSuggestion(email, searchQuery);
+        if (suggestion) {
+            console.log(`[Teams Member Adder] Successfully matched suggestion using query: "${query}"`);
+            break;
+        }
+    }
+
+    if (suggestion) {
+        suggestion.click();
+        await sleep(500);
+        return { success: true };
+    } else {
+        console.log(`[Teams Member Adder] Search returned no matching results for "${searchQuery}" (${email}).`);
+        return {
+            success: false,
+            error: `No student found matching "${searchQuery}" (${email})`
+        };
+    }
+}
+
+async function typeAndSearch(input, query) {
     input.focus();
     await sleep(100);
 
-    // Select all and clear
     input.select();
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
 
     await sleep(100);
 
-    // Communicate what we are searching for
-    console.log(`[Teams Member Adder] Searching for: "${searchQuery}" (expected email: ${email})`);
-
-    // Simulate typing (React-friendly)
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
         'value'
     ).set;
-    nativeInputValueSetter.call(input, searchQuery);
+    nativeInputValueSetter.call(input, query);
 
-    // Dispatch input event to trigger React's onChange
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Also try keyboard events for better React compatibility
     input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
 
-    // Wait for search results to appear
     await sleep(2000);
+}
 
-    // Look for the suggestion/result to click
+function findMatchingSuggestion(email, searchQuery) {
     const suggestionSelectors = [
         '[data-tid="peoplepicker-dropdown-item"]',
         '[data-tid*="suggestion"]',
@@ -160,51 +189,92 @@ async function addMember(email, searchQuery) {
         '[class*="dropdown"] [role="option"]'
     ];
 
-    let suggestion = null;
+    const isNoResultsText = (text) => {
+        const lower = text.toLowerCase();
+        return lower.includes("didn't find") ||
+               lower.includes("no matches") ||
+               lower.includes("no results") ||
+               lower.includes("couldn't find") ||
+               lower.includes("not found") ||
+               lower.includes("no matching") ||
+               lower.includes("can't find") ||
+               lower.includes("0 results");
+    };
+
+    const normalizeAlpha = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const emailLower = (email || '').toLowerCase();
+    const emailPrefix = emailLower.split('@')[0] || '';
+    const emailNormalized = normalizeAlpha(emailPrefix);
+
+    const queryLower = (searchQuery || '').toLowerCase();
+    const queryNormalized = normalizeAlpha(searchQuery);
+
+    const getTokens = (str) => (str || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 2);
+    const queryTokens = getTokens(searchQuery);
+    const emailTokens = getTokens(emailPrefix);
 
     for (const selector of suggestionSelectors) {
         const items = document.querySelectorAll(selector);
         for (const item of items) {
-            const text = item.textContent.toLowerCase();
-            // Match logic:
-            // 1. Exact email match (best)
-            // 2. Email prefix match
-            // 3. Name match (if searchQuery is in the result text)
+            const rawText = item.textContent || '';
+            const textLower = rawText.toLowerCase();
 
-            if (text.includes(email.toLowerCase()) ||
-                text.includes(email.split('@')[0].toLowerCase()) ||
-                text.includes(searchQuery.toLowerCase())) {
+            // Skip elements displaying 'no results' messages
+            if (isNoResultsText(textLower)) {
+                continue;
+            }
 
-                suggestion = item;
-                console.log('[Teams Member Adder] Found matching suggestion:', item.textContent.substring(0, 50));
-                break;
+            const textNormalized = normalizeAlpha(rawText);
+
+            // 1. Direct exact or substring match (Email or SearchQuery)
+            if ((emailLower && textLower.includes(emailLower)) ||
+                (emailPrefix && textLower.includes(emailPrefix)) ||
+                (queryLower && textLower.includes(queryLower))) {
+                console.log('[Teams Member Adder] Direct match suggestion:', rawText.trim().substring(0, 50));
+                return item;
+            }
+
+            // 2. Alphanumeric normalized match (handles de.la.cruz vs delacruz, amba-an vs ambaan)
+            if (emailNormalized.length >= 5 && textNormalized.includes(emailNormalized)) {
+                console.log('[Teams Member Adder] Normalized email match suggestion:', rawText.trim().substring(0, 50));
+                return item;
+            }
+            if (queryNormalized.length >= 5 && textNormalized.includes(queryNormalized)) {
+                console.log('[Teams Member Adder] Normalized query match suggestion:', rawText.trim().substring(0, 50));
+                return item;
+            }
+
+            // 3. Word Token Subset match (handles middle names inserted like HAZEL JOY ARAGON vs HAZEL ARAGON)
+            if (queryTokens.length >= 2) {
+                const allQueryTokensMatch = queryTokens.every(token => textLower.includes(token) || textNormalized.includes(token));
+                if (allQueryTokensMatch) {
+                    console.log('[Teams Member Adder] Token match suggestion (query tokens):', rawText.trim().substring(0, 50));
+                    return item;
+                }
+            }
+
+            // 4. First name + Surname token match (e.g. if middle names were present in query but missing in suggestion)
+            if (queryTokens.length > 2) {
+                const firstLastTokens = [queryTokens[0], queryTokens[queryTokens.length - 1]];
+                const firstLastMatch = firstLastTokens.every(token => textLower.includes(token) || textNormalized.includes(token));
+                if (firstLastMatch) {
+                    console.log('[Teams Member Adder] First+Last token match suggestion:', rawText.trim().substring(0, 50));
+                    return item;
+                }
+            }
+
+            // 5. Email Token Subset match
+            if (emailTokens.length >= 2) {
+                const allEmailTokensMatch = emailTokens.every(token => textLower.includes(token) || textNormalized.includes(token));
+                if (allEmailTokensMatch) {
+                    console.log('[Teams Member Adder] Token match suggestion (email tokens):', rawText.trim().substring(0, 50));
+                    return item;
+                }
             }
         }
-        if (suggestion) break;
     }
-
-    if (suggestion) {
-        suggestion.click();
-        await sleep(500);
-        return { success: true };
-    } else {
-        // If no suggestion found, try pressing Enter
-        console.log('[Teams Member Adder] No suggestion matched. Attempting Enter key...');
-        input.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true
-        }));
-
-        await sleep(500);
-
-        return {
-            success: true,
-            warning: 'No suggestion found, attempted Enter key'
-        };
-    }
+    return null;
 }
 
 function sleep(ms) {
@@ -212,4 +282,5 @@ function sleep(ms) {
 }
 
 // Log that content script is loaded
-console.log('[Teams Member Adder] Content script loaded - v1.2');
+console.log('[Teams Member Adder] Content script loaded - v1.5');
+
